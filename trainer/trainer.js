@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const USE_CARD_IMAGES = false;   // true → брать сканы из /cards/
+const USE_CARD_IMAGES = true;   // true → брать сканы из /cards/
 
 let board=[], hand1=[], hand2=[];
 let active=false, waiting=false;
