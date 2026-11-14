@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Подсчёт сдачи</title>
+<title>Подсчёт сдачи — 3 игрока</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 <div class="topbar">
   <a class="back" href="../">← На главную</a>
   <span class="row">
-    <label>Время на ответ (сек): <input type="number" id="cardTime" value="10" min="3"></label>
+    <label>Время на ответ (сек): <input type="number" id="cardTime" value="15" min="5"></label>
     <label>Тренировка (мин): <input type="number" id="totalTime" value="10" min="1"></label>
     <button class="green" id="btnStart">Начать [Space]</button>
   </span>
@@ -24,34 +24,17 @@
   <span class="stat bad">Неправильно: <b id="stBad">0</b></span>
 </div>
 
-<div class="change-zone">
-  <!-- Ситуация: ставка и фишка игрока -->
-  <div class="situation">
-    <div class="bet-box">
-      <div class="bet-label">СТАВКА</div>
-      <div class="bet-amount" id="betAmount">7 500</div>
-    </div>
-    <div class="chip-box">
-      <div class="bet-label">ИГРОК ДАЛ</div>
-      <div class="chip big" id="playerChip">25 000</div>
-    </div>
-  </div>
+<div class="players-grid" id="playersGrid">
+  <!-- Игроки генерируются из JS -->
+</div>
 
-  <div class="change-hint">Сколько фишек каждого номинала выдать в сдаче?</div>
-
-  <!-- Поля ввода сдачи -->
-  <div class="change-inputs" id="changeInputs">
-    <!-- Заполняется из JS -->
-  </div>
-
-  <div class="row" style="margin-top:14px">
-    <button class="green" id="btnCheck">Проверить [Enter]</button>
-    <button class="orange" id="btnSkip">Пропустить [S]</button>
-  </div>
+<div class="row" style="margin-top:14px">
+  <button class="green" id="btnCheck">Проверить [Enter]</button>
+  <button class="orange" id="btnSkip">Пропустить [S]</button>
 </div>
 
 <div class="panel" id="result">Нажмите «Начать», чтобы начать тренировку</div>
-<div class="hint">Горячие клавиши: 5 · 1 · 2 · 5 · 0 (для каждого номинала) · Enter (проверить) · S (пропустить) · Space (старт)</div>
+<div class="hint">Горячие клавиши: Tab (между полями) · 1-5 (фокус на номинал) · Enter (проверить) · S (пропустить) · Space (старт)</div>
 
 <script src="change.js"></script>
 </body>
