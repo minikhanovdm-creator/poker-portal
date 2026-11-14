@@ -17,7 +17,8 @@ let total = 0, ok = 0, bad = 0;
 let cardSec = 15;
 let handTimer = null, tickTimer = null, nextTimer = null, endAt = 0;
 
-let players = []; // [{bet, chips:[], sum, correctChange:{}}]
+let globalBet = 0;
+let players = []; // [{sum, chips:[], correctChange:{}}]
 
 // ---------- Инициализация ----------
 function initPlayersGrid() {
@@ -28,12 +29,11 @@ function initPlayersGrid() {
         col.className = 'player-col';
         col.innerHTML = `
             <div class="player-header">ИГРОК ${i + 1}</div>
-            <div class="bet-box">
-                <div class="bet-label">СТАВКА</div>
-                <div class="bet-amount" id="bet_${i}">0</div>
+            <div class="player-gave">
+                <div class="bet-label">ДАЛ</div>
+                <div class="player-sum" id="sum_${i}">0</div>
             </div>
             <div class="chips-row" id="chips_${i}"></div>
-            <div class="chips-total" id="chipsTotal_${i}">Всего: 0</div>
             <div class="change-inputs" id="inputs_${i}"></div>
         `;
         grid.appendChild(col);
@@ -78,15 +78,15 @@ function initPlayersGrid() {
 
 // ---------- Генерация задачи ----------
 function generateTask() {
+    // 1. Общая ставка (кратная 500, от 500 до 40000)
+    globalBet = (Math.floor(Math.random() * 80) + 1) * 500;
+    $('globalBet').textContent = formatNum(globalBet);
+
     players = [];
-    const maxBet = 80000; // чтобы сдача была разумной
 
     for (let i = 0; i < NUM_PLAYERS; i++) {
-        // Случайная ставка (кратная 500, от 500 до maxBet)
-        const bet = (Math.floor(Math.random() * (maxBet / 500)) + 1) * 500;
-
-        // 2-3 фишки игрока
-        const numChips = Math.floor(Math.random() * 2) + 2; // 2 или 3
+        // 2. Сумма, которую даёт игрок (>= ставки)
+        // Генерируем 1-3 фишки, сумма которых >= ставки
         let chips = [];
         let sum = 0;
         let attempts = 0;
@@ -94,28 +94,24 @@ function generateTask() {
         while (attempts < 100) {
             chips = [];
             sum = 0;
-            for (let j = 0; j < numChips - 1; j++) {
+            const numChips = Math.floor(Math.random() * 3) + 1; // 1-3 фишки
+            for (let j = 0; j < numChips; j++) {
                 const denom = DENOMINATIONS[Math.floor(Math.random() * DENOMINATIONS.length)];
                 chips.push(denom);
                 sum += denom;
             }
-            const needed = bet - sum;
-            const suitable = DENOMINATIONS.filter(d => d >= Math.max(0, needed) && d <= needed + 40000);
-            if (suitable.length > 0) {
-                const lastChip = suitable[Math.floor(Math.random() * suitable.length)];
-                chips.push(lastChip);
-                sum += lastChip;
-                if (sum >= bet && (sum - bet) <= 80000) break;
-            }
+            if (sum >= globalBet && (sum - globalBet) <= 150000) break;
             attempts++;
         }
         if (attempts >= 100) {
-            chips = [bet];
-            sum = bet;
+            // Фоллбэк: одна фишка, покрывающая ставку
+            const suitable = DENOMINATIONS.filter(d => d >= globalBet);
+            chips = [suitable[0] || 100000];
+            sum = chips[0];
         }
 
-        // Сдача (жадный алгоритм)
-        let change = sum - bet;
+        // 3. Сдача (жадный алгоритм)
+        let change = sum - globalBet;
         const correctChange = {};
         DENOMINATIONS.forEach(d => correctChange[d] = 0);
         for (const d of DENOMINATIONS) {
@@ -125,14 +121,13 @@ function generateTask() {
             }
         }
 
-        players.push({ bet, chips, sum, correctChange });
+        players.push({ sum, chips, correctChange });
     }
 
-    // Отображение
+    // 4. Отображение
     for (let i = 0; i < NUM_PLAYERS; i++) {
         const p = players[i];
-        $(`bet_${i}`).textContent = formatNum(p.bet);
-        $(`chipsTotal_${i}`).textContent = `Всего: ${formatNum(p.sum)}`;
+        $(`sum_${i}`).textContent = formatNum(p.sum);
 
         const chipsRow = $(`chips_${i}`);
         chipsRow.innerHTML = '';
@@ -188,7 +183,7 @@ function checkAnswer() {
                 .filter(d => p.correctChange[d] > 0)
                 .map(d => `${p.correctChange[d]}×${CHIP_COLORS[d].label}`)
                 .join(' + ') || '0';
-            msg += `Игрок ${i + 1}: ${correctStr}\n`;
+            msg += `Игрок ${i + 1} (дал ${formatNum(p.sum)}): ${correctStr}\n`;
         });
         say(msg.trim(), '#FF6347');
     }
@@ -207,7 +202,7 @@ function skip() {
             .filter(d => p.correctChange[d] > 0)
             .map(d => `${p.correctChange[d]}×${CHIP_COLORS[d].label}`)
             .join(' + ') || '0';
-        msg += `Игрок ${i + 1}: ${correctStr}\n`;
+        msg += `Игрок ${i + 1} (дал ${formatNum(p.sum)}): ${correctStr}\n`;
     });
     say(msg.trim(), '#FFA500');
     stats();
@@ -224,7 +219,7 @@ function timeout() {
             .filter(d => p.correctChange[d] > 0)
             .map(d => `${p.correctChange[d]}×${CHIP_COLORS[d].label}`)
             .join(' + ') || '0';
-        msg += `Игрок ${i + 1}: ${correctStr}\n`;
+        msg += `Игрок ${i + 1} (дал ${formatNum(p.sum)}): ${correctStr}\n`;
     });
     say(msg.trim(), '#FF6347');
     stats();
@@ -239,7 +234,7 @@ function next() {
 function deal() {
     if (!active) return;
     generateTask();
-    say(`Считайте сдачу всем троим! У вас ${cardSec} сек.`, '#fff');
+    say(`Ставка ${formatNum(globalBet)}. Посчитайте сдачу каждому! У вас ${cardSec} сек.`, '#fff');
     waiting = true;
     document.querySelectorAll('.chip-count').forEach(inp => inp.disabled = false);
     $('btnCheck').disabled = false;
