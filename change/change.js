@@ -1,54 +1,74 @@
 const $ = id => document.getElementById(id);
 
-// Номиналы фишек (от большего к меньшему — для жадного алгоритма)
 const DENOMINATIONS = [100000, 25000, 5000, 1000, 500];
 
-// Цвета фишек (как в реальном казино)
 const CHIP_COLORS = {
-    100000: { bg: '#2c2c2c', border: '#FFD700', text: '#FFD700' }, // чёрная с золотом
-    25000:  { bg: '#1e8449', border: '#fff', text: '#fff' },       // зелёная
-    5000:   { bg: '#d35400', border: '#fff', text: '#fff' },       // оранжевая
-    1000:   { bg: '#f4f6f7', border: '#2980b9', text: '#2980b9' }, // белая с синим
-    500:    { bg: '#c0392b', border: '#fff', text: '#fff' }        // красная
+    100000: { bg: '#f4f6f7', border: '#FFD700', text: '#1a1a1a', label: '100к' },
+    25000:  { bg: '#1e8449', border: '#fff', text: '#fff', label: '25к' },
+    5000:   { bg: '#2c2c2c', border: '#FFD700', text: '#FFD700', label: '5к' },
+    1000:   { bg: '#2980b9', border: '#fff', text: '#fff', label: '1к' },
+    500:    { bg: '#c0392b', border: '#fff', text: '#fff', label: '500' }
 };
+
+const NUM_PLAYERS = 3;
 
 let active = false, waiting = false;
 let total = 0, ok = 0, bad = 0;
-let cardSec = 10;
+let cardSec = 15;
 let handTimer = null, tickTimer = null, nextTimer = null, endAt = 0;
 
-let currentBet = 0;
-let currentChip = 0;
-let correctChange = {};  // {100000: 0, 25000: 1, ...}
+let players = []; // [{bet, chips:[], sum, correctChange:{}}]
 
-// ---------- Инициализация полей ввода ----------
-function initInputs() {
-    const box = $('changeInputs');
-    box.innerHTML = '';
-    DENOMINATIONS.forEach((d, i) => {
-        const c = CHIP_COLORS[d];
-        const wrap = document.createElement('div');
-        wrap.className = 'chip-input-wrap';
-        wrap.innerHTML = `
-            <div class="chip mini" style="background:${c.bg};border-color:${c.border};color:${c.text}">
-                ${formatNum(d)}
+// ---------- Инициализация ----------
+function initPlayersGrid() {
+    const grid = $('playersGrid');
+    grid.innerHTML = '';
+    for (let i = 0; i < NUM_PLAYERS; i++) {
+        const col = document.createElement('div');
+        col.className = 'player-col';
+        col.innerHTML = `
+            <div class="player-header">ИГРОК ${i + 1}</div>
+            <div class="bet-box">
+                <div class="bet-label">СТАВКА</div>
+                <div class="bet-amount" id="bet_${i}">0</div>
             </div>
-            <div class="chip-controls">
-                <button class="chip-btn" data-denom="${d}" data-delta="-1">−</button>
-                <input type="number" class="chip-count" id="cnt_${d}" value="0" min="0" max="99" data-idx="${i}">
-                <button class="chip-btn" data-denom="${d}" data-delta="1">+</button>
-            </div>
+            <div class="chips-row" id="chips_${i}"></div>
+            <div class="chips-total" id="chipsTotal_${i}">Всего: 0</div>
+            <div class="change-inputs" id="inputs_${i}"></div>
         `;
-        box.appendChild(wrap);
-    });
+        grid.appendChild(col);
+    }
 
-    // Обработчики + / −
-    box.querySelectorAll('.chip-btn').forEach(btn => {
+    // Создаём поля ввода для каждого игрока
+    for (let i = 0; i < NUM_PLAYERS; i++) {
+        const inputsBox = $(`inputs_${i}`);
+        inputsBox.innerHTML = '';
+        DENOMINATIONS.forEach(d => {
+            const c = CHIP_COLORS[d];
+            const wrap = document.createElement('div');
+            wrap.className = 'chip-input-wrap';
+            wrap.innerHTML = `
+                <div class="chip mini" style="background:${c.bg};border-color:${c.border};color:${c.text}">
+                    ${c.label}
+                </div>
+                <div class="chip-controls">
+                    <button class="chip-btn" data-player="${i}" data-denom="${d}" data-delta="-1">−</button>
+                    <input type="number" class="chip-count" id="cnt_${i}_${d}" value="0" min="0" max="99">
+                    <button class="chip-btn" data-player="${i}" data-denom="${d}" data-delta="1">+</button>
+                </div>
+            `;
+            inputsBox.appendChild(wrap);
+        });
+    }
+
+    // Обработчики +/−
+    document.querySelectorAll('.chip-btn').forEach(btn => {
         btn.onclick = () => {
             if (!waiting) return;
+            const p = parseInt(btn.dataset.player);
             const d = parseInt(btn.dataset.denom);
             const delta = parseInt(btn.dataset.delta);
-            const inp = $(`cnt_${d}`);
+            const inp = $(`cnt_${p}_${d}`);
             let v = parseInt(inp.value) || 0;
             v = Math.max(0, v + delta);
             inp.value = v;
@@ -58,75 +78,119 @@ function initInputs() {
 
 // ---------- Генерация задачи ----------
 function generateTask() {
-    // Случайная ставка (кратная 500, от 500 до 200000)
-    const maxBet = 200000;
-    currentBet = (Math.floor(Math.random() * (maxBet / 500)) + 1) * 500;
+    players = [];
+    const maxBet = 80000; // чтобы сдача была разумной
 
-    // Фишка игрока — должна быть ≥ ставки
-    // Выбираем номинал, который гарантированно покрывает ставку
-    const suitable = DENOMINATIONS.filter(d => d >= currentBet);
-    // Иногда даём фишку больше, чем нужно (чтобы была сдача)
-    currentChip = suitable[Math.floor(Math.random() * suitable.length)];
+    for (let i = 0; i < NUM_PLAYERS; i++) {
+        // Случайная ставка (кратная 500, от 500 до maxBet)
+        const bet = (Math.floor(Math.random() * (maxBet / 500)) + 1) * 500;
 
-    // Если фишка = ставке, сдачи нет — перегенерируем
-    if (currentChip === currentBet) {
-        // Берём следующий больший номинал
-        const idx = DENOMINATIONS.indexOf(currentChip);
-        if (idx > 0) currentChip = DENOMINATIONS[idx - 1];
-        else {
-            // Ставка слишком большая, уменьшаем её
-            currentBet = currentChip - 500;
+        // 2-3 фишки игрока
+        const numChips = Math.floor(Math.random() * 2) + 2; // 2 или 3
+        let chips = [];
+        let sum = 0;
+        let attempts = 0;
+
+        while (attempts < 100) {
+            chips = [];
+            sum = 0;
+            for (let j = 0; j < numChips - 1; j++) {
+                const denom = DENOMINATIONS[Math.floor(Math.random() * DENOMINATIONS.length)];
+                chips.push(denom);
+                sum += denom;
+            }
+            const needed = bet - sum;
+            const suitable = DENOMINATIONS.filter(d => d >= Math.max(0, needed) && d <= needed + 40000);
+            if (suitable.length > 0) {
+                const lastChip = suitable[Math.floor(Math.random() * suitable.length)];
+                chips.push(lastChip);
+                sum += lastChip;
+                if (sum >= bet && (sum - bet) <= 80000) break;
+            }
+            attempts++;
         }
+        if (attempts >= 100) {
+            chips = [bet];
+            sum = bet;
+        }
+
+        // Сдача (жадный алгоритм)
+        let change = sum - bet;
+        const correctChange = {};
+        DENOMINATIONS.forEach(d => correctChange[d] = 0);
+        for (const d of DENOMINATIONS) {
+            while (change >= d) {
+                correctChange[d]++;
+                change -= d;
+            }
+        }
+
+        players.push({ bet, chips, sum, correctChange });
     }
 
-    // Считаем оптимальную сдачу (жадный алгоритм)
-    let change = currentChip - currentBet;
-    correctChange = {};
-    DENOMINATIONS.forEach(d => correctChange[d] = 0);
-    for (const d of DENOMINATIONS) {
-        while (change >= d) {
-            correctChange[d]++;
-            change -= d;
-        }
+    // Отображение
+    for (let i = 0; i < NUM_PLAYERS; i++) {
+        const p = players[i];
+        $(`bet_${i}`).textContent = formatNum(p.bet);
+        $(`chipsTotal_${i}`).textContent = `Всего: ${formatNum(p.sum)}`;
+
+        const chipsRow = $(`chips_${i}`);
+        chipsRow.innerHTML = '';
+        p.chips.forEach(d => {
+            const c = CHIP_COLORS[d];
+            const chip = document.createElement('div');
+            chip.className = 'chip medium';
+            chip.style.background = c.bg;
+            chip.style.borderColor = c.border;
+            chip.style.color = c.text;
+            chip.textContent = c.label;
+            chipsRow.appendChild(chip);
+        });
+
+        // Сброс полей ввода
+        DENOMINATIONS.forEach(d => $(`cnt_${i}_${d}`).value = 0);
     }
-
-    // Отображаем
-    $('betAmount').textContent = formatNum(currentBet);
-    const chipEl = $('playerChip');
-    const c = CHIP_COLORS[currentChip];
-    chipEl.textContent = formatNum(currentChip);
-    chipEl.style.background = c.bg;
-    chipEl.style.borderColor = c.border;
-    chipEl.style.color = c.text;
-
-    // Сбрасываем поля ввода
-    DENOMINATIONS.forEach(d => $(`cnt_${d}`).value = 0);
 }
 
-// ---------- Проверка ответа ----------
+// ---------- Проверка ----------
 function checkAnswer() {
     if (!active || !waiting) return;
     waiting = false;
     clearTimeout(handTimer);
     total++;
 
-    const userChange = {};
-    DENOMINATIONS.forEach(d => userChange[d] = parseInt($(`cnt_${d}`).value) || 0);
+    let allCorrect = true;
+    const wrongPlayers = [];
 
-    // Сравниваем с правильным ответом
-    const isCorrect = DENOMINATIONS.every(d => userChange[d] === correctChange[d]);
+    for (let i = 0; i < NUM_PLAYERS; i++) {
+        const p = players[i];
+        const userChange = {};
+        DENOMINATIONS.forEach(d => userChange[d] = parseInt($(`cnt_${i}_${d}`).value) || 0);
 
-    if (isCorrect) {
+        const isCorrect = DENOMINATIONS.every(d => userChange[d] === p.correctChange[d]);
+        if (!isCorrect) {
+            allCorrect = false;
+            wrongPlayers.push(i);
+        }
+    }
+
+    if (allCorrect) {
         ok++;
-        const totalChips = DENOMINATIONS.reduce((s, d) => s + correctChange[d], 0);
-        say(`✅ ПРАВИЛЬНО! Сдача ${formatNum(currentChip - currentBet)} — ${totalChips} фишек`, '#7CFC00');
+        const totalChips = players.reduce((s, p) =>
+            s + DENOMINATIONS.reduce((ss, d) => ss + p.correctChange[d], 0), 0);
+        say(`✅ ВСЕ ПРАВИЛЬНО! Всего выдано ${totalChips} фишек`, '#7CFC00');
     } else {
         bad++;
-        const correctStr = DENOMINATIONS
-            .filter(d => correctChange[d] > 0)
-            .map(d => `${correctChange[d]}×${formatNum(d)}`)
-            .join(' + ') || '0 (сдачи нет)';
-        say(`❌ НЕПРАВИЛЬНО!\nПравильная сдача: ${correctStr}`, '#FF6347');
+        let msg = '❌ ОШИБКА:\n';
+        wrongPlayers.forEach(i => {
+            const p = players[i];
+            const correctStr = DENOMINATIONS
+                .filter(d => p.correctChange[d] > 0)
+                .map(d => `${p.correctChange[d]}×${CHIP_COLORS[d].label}`)
+                .join(' + ') || '0';
+            msg += `Игрок ${i + 1}: ${correctStr}\n`;
+        });
+        say(msg.trim(), '#FF6347');
     }
     stats();
     next();
@@ -137,11 +201,15 @@ function skip() {
     waiting = false;
     clearTimeout(handTimer);
     total++; bad++;
-    const correctStr = DENOMINATIONS
-        .filter(d => correctChange[d] > 0)
-        .map(d => `${correctChange[d]}×${formatNum(d)}`)
-        .join(' + ') || '0';
-    say(`⏭ ПРОПУЩЕНО. Правильный ответ: ${correctStr}`, '#FFA500');
+    let msg = '⏭ ПРОПУЩЕНО. Правильные ответы:\n';
+    players.forEach((p, i) => {
+        const correctStr = DENOMINATIONS
+            .filter(d => p.correctChange[d] > 0)
+            .map(d => `${p.correctChange[d]}×${CHIP_COLORS[d].label}`)
+            .join(' + ') || '0';
+        msg += `Игрок ${i + 1}: ${correctStr}\n`;
+    });
+    say(msg.trim(), '#FFA500');
     stats();
     next();
 }
@@ -150,27 +218,30 @@ function timeout() {
     if (!waiting) return;
     waiting = false;
     total++; bad++;
-    const correctStr = DENOMINATIONS
-        .filter(d => correctChange[d] > 0)
-        .map(d => `${correctChange[d]}×${formatNum(d)}`)
-        .join(' + ') || '0';
-    say(`⏰ ВРЕМЯ ВЫШЛО!\nПравильная сдача: ${correctStr}`, '#FF6347');
+    let msg = '⏰ ВРЕМЯ ВЫШЛО!\n';
+    players.forEach((p, i) => {
+        const correctStr = DENOMINATIONS
+            .filter(d => p.correctChange[d] > 0)
+            .map(d => `${p.correctChange[d]}×${CHIP_COLORS[d].label}`)
+            .join(' + ') || '0';
+        msg += `Игрок ${i + 1}: ${correctStr}\n`;
+    });
+    say(msg.trim(), '#FF6347');
     stats();
     next();
 }
 
 function next() {
     clearTimeout(nextTimer);
-    nextTimer = setTimeout(() => { if (active) deal(); }, 2500);
+    nextTimer = setTimeout(() => { if (active) deal(); }, 3000);
 }
 
-// ---------- Игровой цикл ----------
 function deal() {
     if (!active) return;
     generateTask();
-    say(`Считайте сдачу! У вас ${cardSec} сек.`, '#fff');
+    say(`Считайте сдачу всем троим! У вас ${cardSec} сек.`, '#fff');
     waiting = true;
-    DENOMINATIONS.forEach(d => $(`cnt_${d}`).disabled = false);
+    document.querySelectorAll('.chip-count').forEach(inp => inp.disabled = false);
     $('btnCheck').disabled = false;
     $('btnSkip').disabled = false;
     clearTimeout(handTimer);
@@ -178,7 +249,7 @@ function deal() {
 }
 
 function start() {
-    cardSec = Math.max(3, parseInt($('cardTime').value) || 10);
+    cardSec = Math.max(5, parseInt($('cardTime').value) || 15);
     const min = Math.max(1, parseInt($('totalTime').value) || 10);
     localStorage.setItem('ch_settings', JSON.stringify({ cardSec, min }));
     total = ok = bad = 0; stats();
@@ -205,7 +276,7 @@ function finish() {
     clearTimeout(nextTimer);
     $('btnStart').disabled = false;
     $('cardTime').disabled = $('totalTime').disabled = false;
-    DENOMINATIONS.forEach(d => $(`cnt_${d}`).disabled = true);
+    document.querySelectorAll('.chip-count').forEach(inp => inp.disabled = true);
     $('btnCheck').disabled = $('btnSkip').disabled = true;
     $('timer').textContent = 'Осталось: 00:00';
     const pct = total ? (ok / total * 100).toFixed(1) : '0.0';
@@ -213,7 +284,6 @@ function finish() {
     say('Тренировка завершена. Нажмите «Начать» для новой сессии.', '#fff');
 }
 
-// ---------- Утилиты ----------
 function formatNum(n) {
     return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
@@ -234,22 +304,14 @@ document.addEventListener('keydown', e => {
     if (k === ' ' || k === 'space') { e.preventDefault(); if (!$('btnStart').disabled) start(); }
     else if (k === 'enter') { e.preventDefault(); checkAnswer(); }
     else if (k === 's' || k === 'ы') { e.preventDefault(); skip(); }
-    // Цифровые клавиши 1-5 — фокус на соответствующее поле
-    else if (['1','2','3','4','5'].includes(k)) {
-        // 1 → 100000, 2 → 25000, 3 → 5000, 4 → 1000, 5 → 500
-        const map = { '1': 100000, '2': 25000, '3': 5000, '4': 1000, '5': 500 };
-        const inp = $(`cnt_${map[k]}`);
-        if (inp && !inp.disabled) { inp.focus(); inp.select(); }
-    }
 });
 
-// Восстановление настроек
 (function restore() {
     try {
         const s = JSON.parse(localStorage.getItem('ch_settings'));
         if (s) { $('cardTime').value = s.cardSec; $('totalTime').value = s.min; }
     } catch (_) {}
-    initInputs();
-    DENOMINATIONS.forEach(d => $(`cnt_${d}`).disabled = true);
+    initPlayersGrid();
+    document.querySelectorAll('.chip-count').forEach(inp => inp.disabled = true);
     $('btnCheck').disabled = $('btnSkip').disabled = true;
 })();
