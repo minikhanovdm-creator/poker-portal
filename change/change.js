@@ -74,42 +74,74 @@ function initPlayersGrid() {
 }
 
 function generateTask() {
-    globalBet = (Math.floor(Math.random() * 80) + 1) * 500;
+    // 1. Общая ставка (кратная 500, от 500 до 150000)
+    globalBet = (Math.floor(Math.random() * 300) + 1) * 500;
     $('globalBet').textContent = formatNum(globalBet);
+
+    // 2. Определяем минимальный номинал фишки в зависимости от ставки
+    let minDenom;
+    if (globalBet <= 10000) {
+        minDenom = 500;
+    } else if (globalBet <= 50000) {
+        minDenom = 1000;
+    } else {
+        minDenom = 5000;
+    }
+
+    // Доступные номиналы для игроков (только >= minDenom)
+    const availableDenoms = DENOMINATIONS.filter(d => d >= minDenom);
 
     players = [];
 
     for (let i = 0; i < NUM_PLAYERS; i++) {
-        let chips = [], sum = 0, attempts = 0;
+        // 3. Генерируем сумму игрока из доступных номиналов
+        //    Сумма автоматически будет кратна minDenom
+        let chips = [];
+        let sum = 0;
+        let attempts = 0;
+
         while (attempts < 100) {
-            chips = []; sum = 0;
-            const numChips = Math.floor(Math.random() * 3) + 1;
+            chips = [];
+            sum = 0;
+            const numChips = Math.floor(Math.random() * 3) + 1; // 1-3 фишки
+            
             for (let j = 0; j < numChips; j++) {
-                const denom = DENOMINATIONS[Math.floor(Math.random() * DENOMINATIONS.length)];
+                const denom = availableDenoms[Math.floor(Math.random() * availableDenoms.length)];
                 chips.push(denom);
                 sum += denom;
             }
+            
+            // Сумма должна покрывать ставку, сдача не слишком большая
             if (sum >= globalBet && (sum - globalBet) <= 150000) break;
             attempts++;
         }
+        
+        // Фоллбэк: одна фишка, покрывающая ставку
         if (attempts >= 100) {
-            const suitable = DENOMINATIONS.filter(d => d >= globalBet);
-            chips = [suitable[0] || 100000];
+            const suitable = availableDenoms.filter(d => d >= globalBet);
+            chips = [suitable[0] || availableDenoms[availableDenoms.length - 1]];
             sum = chips[0];
         }
 
+        // 4. Сдача (жадный алгоритм по всем номиналам)
         let change = sum - globalBet;
         const correctChange = {};
         DENOMINATIONS.forEach(d => correctChange[d] = 0);
         for (const d of DENOMINATIONS) {
-            while (change >= d) { correctChange[d]++; change -= d; }
+            while (change >= d) {
+                correctChange[d]++;
+                change -= d;
+            }
         }
+
         players.push({ sum, chips, correctChange });
     }
 
+    // 5. Отображение
     for (let i = 0; i < NUM_PLAYERS; i++) {
         const p = players[i];
         $(`sum_${i}`).textContent = formatNum(p.sum);
+
         const chipsRow = $(`chips_${i}`);
         chipsRow.innerHTML = '';
         p.chips.forEach(d => {
@@ -122,6 +154,8 @@ function generateTask() {
             chip.textContent = c.label;
             chipsRow.appendChild(chip);
         });
+
+        // Сброс полей ввода
         DENOMINATIONS.forEach(d => $(`cnt_${i}_${d}`).value = 0);
     }
 }
