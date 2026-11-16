@@ -12,15 +12,14 @@ const CHIP_COLORS = {
 
 const NUM_PLAYERS = 3;
 
-let active = false, waiting = false;
+let active = false, waiting = false, awaitingNext = false;
 let total = 0, ok = 0, bad = 0;
 let cardSec = 15;
-let handTimer = null, tickTimer = null, nextTimer = null, endAt = 0;
+let handTimer = null, tickTimer = null, endAt = 0;
 
 let globalBet = 0;
-let players = []; // [{sum, chips:[], correctChange:{}}]
+let players = [];
 
-// ---------- Инициализация ----------
 function initPlayersGrid() {
     const grid = $('playersGrid');
     grid.innerHTML = '';
@@ -39,7 +38,6 @@ function initPlayersGrid() {
         grid.appendChild(col);
     }
 
-    // Создаём поля ввода для каждого игрока
     for (let i = 0; i < NUM_PLAYERS; i++) {
         const inputsBox = $(`inputs_${i}`);
         inputsBox.innerHTML = '';
@@ -61,7 +59,6 @@ function initPlayersGrid() {
         });
     }
 
-    // Обработчики +/−
     document.querySelectorAll('.chip-btn').forEach(btn => {
         btn.onclick = () => {
             if (!waiting) return;
@@ -76,25 +73,17 @@ function initPlayersGrid() {
     });
 }
 
-// ---------- Генерация задачи ----------
 function generateTask() {
-    // 1. Общая ставка (кратная 500, от 500 до 40000)
     globalBet = (Math.floor(Math.random() * 80) + 1) * 500;
     $('globalBet').textContent = formatNum(globalBet);
 
     players = [];
 
     for (let i = 0; i < NUM_PLAYERS; i++) {
-        // 2. Сумма, которую даёт игрок (>= ставки)
-        // Генерируем 1-3 фишки, сумма которых >= ставки
-        let chips = [];
-        let sum = 0;
-        let attempts = 0;
-
+        let chips = [], sum = 0, attempts = 0;
         while (attempts < 100) {
-            chips = [];
-            sum = 0;
-            const numChips = Math.floor(Math.random() * 3) + 1; // 1-3 фишки
+            chips = []; sum = 0;
+            const numChips = Math.floor(Math.random() * 3) + 1;
             for (let j = 0; j < numChips; j++) {
                 const denom = DENOMINATIONS[Math.floor(Math.random() * DENOMINATIONS.length)];
                 chips.push(denom);
@@ -104,31 +93,23 @@ function generateTask() {
             attempts++;
         }
         if (attempts >= 100) {
-            // Фоллбэк: одна фишка, покрывающая ставку
             const suitable = DENOMINATIONS.filter(d => d >= globalBet);
             chips = [suitable[0] || 100000];
             sum = chips[0];
         }
 
-        // 3. Сдача (жадный алгоритм)
         let change = sum - globalBet;
         const correctChange = {};
         DENOMINATIONS.forEach(d => correctChange[d] = 0);
         for (const d of DENOMINATIONS) {
-            while (change >= d) {
-                correctChange[d]++;
-                change -= d;
-            }
+            while (change >= d) { correctChange[d]++; change -= d; }
         }
-
         players.push({ sum, chips, correctChange });
     }
 
-    // 4. Отображение
     for (let i = 0; i < NUM_PLAYERS; i++) {
         const p = players[i];
         $(`sum_${i}`).textContent = formatNum(p.sum);
-
         const chipsRow = $(`chips_${i}`);
         chipsRow.innerHTML = '';
         p.chips.forEach(d => {
@@ -141,13 +122,10 @@ function generateTask() {
             chip.textContent = c.label;
             chipsRow.appendChild(chip);
         });
-
-        // Сброс полей ввода
         DENOMINATIONS.forEach(d => $(`cnt_${i}_${d}`).value = 0);
     }
 }
 
-// ---------- Проверка ----------
 function checkAnswer() {
     if (!active || !waiting) return;
     waiting = false;
@@ -161,12 +139,8 @@ function checkAnswer() {
         const p = players[i];
         const userChange = {};
         DENOMINATIONS.forEach(d => userChange[d] = parseInt($(`cnt_${i}_${d}`).value) || 0);
-
         const isCorrect = DENOMINATIONS.every(d => userChange[d] === p.correctChange[d]);
-        if (!isCorrect) {
-            allCorrect = false;
-            wrongPlayers.push(i);
-        }
+        if (!isCorrect) { allCorrect = false; wrongPlayers.push(i); }
     }
 
     if (allCorrect) {
@@ -188,7 +162,7 @@ function checkAnswer() {
         say(msg.trim(), '#FF6347');
     }
     stats();
-    next();
+    showNextButton();
 }
 
 function skip() {
@@ -206,7 +180,7 @@ function skip() {
     });
     say(msg.trim(), '#FFA500');
     stats();
-    next();
+    showNextButton();
 }
 
 function timeout() {
@@ -223,12 +197,23 @@ function timeout() {
     });
     say(msg.trim(), '#FF6347');
     stats();
-    next();
+    showNextButton();
 }
 
-function next() {
-    clearTimeout(nextTimer);
-    nextTimer = setTimeout(() => { if (active) deal(); }, 3000);
+function showNextButton() {
+    awaitingNext = true;
+    document.querySelectorAll('.chip-count').forEach(inp => inp.disabled = true);
+    $('btnCheck').disabled = true;
+    $('btnSkip').disabled = true;
+    $('btnNext').disabled = false;
+    $('btnNext').focus();
+}
+
+function goNext() {
+    if (!active || !awaitingNext) return;
+    awaitingNext = false;
+    if ((endAt - Date.now()) <= 0) { finish(); return; }
+    deal();
 }
 
 function deal() {
@@ -239,6 +224,7 @@ function deal() {
     document.querySelectorAll('.chip-count').forEach(inp => inp.disabled = false);
     $('btnCheck').disabled = false;
     $('btnSkip').disabled = false;
+    $('btnNext').disabled = true;
     clearTimeout(handTimer);
     handTimer = setTimeout(timeout, cardSec * 1000);
 }
@@ -265,39 +251,40 @@ function tick() {
 }
 
 function finish() {
-    active = waiting = false;
+    active = waiting = awaitingNext = false;
     clearInterval(tickTimer);
     clearTimeout(handTimer);
-    clearTimeout(nextTimer);
     $('btnStart').disabled = false;
     $('cardTime').disabled = $('totalTime').disabled = false;
     document.querySelectorAll('.chip-count').forEach(inp => inp.disabled = true);
-    $('btnCheck').disabled = $('btnSkip').disabled = true;
+    $('btnCheck').disabled = $('btnSkip').disabled = $('btnNext').disabled = true;
     $('timer').textContent = 'Осталось: 00:00';
     const pct = total ? (ok / total * 100).toFixed(1) : '0.0';
     alert(`Тренировка завершена!\n\nЗадач: ${total}\nПравильно: ${ok}\nНеправильно: ${bad}\nТочность: ${pct}%`);
     say('Тренировка завершена. Нажмите «Начать» для новой сессии.', '#fff');
 }
 
-function formatNum(n) {
-    return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-}
+function formatNum(n) { return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
 function say(t, c) { const r = $('result'); r.textContent = t; r.style.color = c; }
 function stats() { $('stTotal').textContent = total; $('stOk').textContent = ok; $('stBad').textContent = bad; }
 
-// ---------- События ----------
 $('btnStart').onclick = start;
 $('btnCheck').onclick = checkAnswer;
 $('btnSkip').onclick = skip;
+$('btnNext').onclick = goNext;
 
 document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') {
-        if (e.key === 'Enter') { e.preventDefault(); checkAnswer(); }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (awaitingNext) goNext();
+            else checkAnswer();
+        }
         return;
     }
     const k = e.key.toLowerCase();
     if (k === ' ' || k === 'space') { e.preventDefault(); if (!$('btnStart').disabled) start(); }
-    else if (k === 'enter') { e.preventDefault(); checkAnswer(); }
+    else if (k === 'enter') { e.preventDefault(); if (awaitingNext) goNext(); else checkAnswer(); }
     else if (k === 's' || k === 'ы') { e.preventDefault(); skip(); }
 });
 
@@ -308,5 +295,5 @@ document.addEventListener('keydown', e => {
     } catch (_) {}
     initPlayersGrid();
     document.querySelectorAll('.chip-count').forEach(inp => inp.disabled = true);
-    $('btnCheck').disabled = $('btnSkip').disabled = true;
+    $('btnCheck').disabled = $('btnSkip').disabled = $('btnNext').disabled = true;
 })();
