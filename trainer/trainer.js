@@ -1,12 +1,11 @@
 const $ = id => document.getElementById(id);
-const USE_CARD_IMAGES = true;   // true → брать сканы из /cards/
+const USE_CARD_IMAGES = false;
 
 let board=[], hand1=[], hand2=[];
-let active=false, waiting=false;
+let active=false, waiting=false, awaitingNext=false;
 let total=0, ok=0, bad=0, cardSec=5;
-let handTimer=null, tickTimer=null, nextTimer=null, endAt=0;
+let handTimer=null, tickTimer=null, endAt=0;
 
-// ---------- отрисовка карт ----------
 const LAYOUT = {
   2:[[50,28],[50,112]],
   3:[[50,28],[50,70],[50,112]],
@@ -66,60 +65,97 @@ function render(id,cards){
   cards.forEach(c=>box.appendChild(cardEl(c)));
 }
 
-// ---------- игра ----------
 function deal(){
   if(!active) return;
   const d=shuffle(makeDeck());
   board=d.slice(0,5); hand1=d.slice(5,7); hand2=d.slice(7,9);
   render('board',board); render('hand1',hand1); render('hand2',hand2);
   say(`Определите победителя! У вас ${cardSec} сек.`, '#fff');
-  waiting=true; setButtons(true);
+  waiting=true; awaitingNext=false;
+  setButtons(true);
+  $('btnNext').disabled = true;
   clearTimeout(handTimer);
   handTimer=setTimeout(timeout, cardSec*1000);
 }
+
 function judge(){
   const e1=evaluate([...board,...hand1]);
   const e2=evaluate([...board,...hand2]);
   const cmp=compareHands(e1,e2);
   return {e1,e2,answer: cmp>0?1:cmp<0?2:0};
 }
+
 function answer(choice){
   if(!active||!waiting) return;
-  waiting=false; clearTimeout(handTimer); setButtons(false);
+  waiting=false;
+  clearTimeout(handTimer);
+  setButtons(false);
   total++;
   const {e1,e2,answer:right}=judge();
+  const wName = right===0?'Ничья':right===1?'Игрок 1':'Игрок 2';
+
   if(choice===right){
-    ok++; say('✅ ПРАВИЛЬНО!', '#7CFC00');
+    ok++;
+    // Показываем выигрышную комбинацию
+    if (right === 0) {
+      say(`✅ ПРАВИЛЬНО! Ничья\nИгрок 1: ${e1.name}\nИгрок 2: ${e2.name}`, '#7CFC00');
+    } else {
+      const winnerEval = right === 1 ? e1 : e2;
+      say(`✅ ПРАВИЛЬНО! ${wName} выигрывает\nКомбинация: ${winnerEval.name}`, '#7CFC00');
+    }
   } else {
     bad++;
-    const w = right===0?'Ничья':right===1?'Игрок 1':'Игрок 2';
-    say(`❌ НЕПРАВИЛЬНО! ${w}\nИгрок 1: ${e1.name}\nИгрок 2: ${e2.name}`,'#FF6347');
+    const wrongEval = choice===1 ? e1 : e2;
+    const correctEval = right===1 ? e1 : e2;
+    say(`❌ НЕПРАВИЛЬНО! Победил ${wName}\n` +
+        `Ваш выбор (${choice===0?'Ничья':'Игрок '+choice}): ${wrongEval.name}\n` +
+        `Правильный ответ (${wName}): ${correctEval.name}`, '#FF6347');
   }
-  stats(); next();
+  stats();
+  showNextButton();
 }
+
 function timeout(){
   if(!waiting) return;
-  waiting=false; setButtons(false); total++; bad++;
+  waiting=false;
+  setButtons(false);
+  total++; bad++;
   const {e1,e2,answer:right}=judge();
-  const w = right===0?'Ничья':right===1?'Игрок 1':'Игрок 2';
-  say(`⏰ ВРЕМЯ ВЫШЛО! ${w}\nИгрок 1: ${e1.name}\nИгрок 2: ${e2.name}`,'#FF6347');
-  stats(); next();
+  const wName = right===0?'Ничья':right===1?'Игрок 1':'Игрок 2';
+  const correctEval = right===1 ? e1 : e2;
+  say(`⏰ ВРЕМЯ ВЫШЛО! Победил ${wName}\n` +
+      `Комбинация: ${correctEval.name}\n` +
+      `Игрок 1: ${e1.name}\nИгрок 2: ${e2.name}`, '#FF6347');
+  stats();
+  showNextButton();
 }
-function next(){
-  clearTimeout(nextTimer);
-  nextTimer=setTimeout(()=>{ if(active) deal(); }, 3000);
+
+function showNextButton() {
+  awaitingNext = true;
+  $('btnNext').disabled = false;
+  $('btnNext').focus();
 }
+
+function goNext() {
+  if (!active || !awaitingNext) return;
+  awaitingNext = false;
+  if ((endAt - Date.now()) <= 0) { finish(); return; }
+  deal();
+}
+
 function start(){
   cardSec=Math.max(1,parseInt($('cardTime').value)||5);
   const min=Math.max(1,parseInt($('totalTime').value)||10);
   localStorage.setItem('pt_settings',JSON.stringify({cardSec,min}));
   total=ok=bad=0; stats();
-  active=true; $('btnStart').disabled=true;
+  active=true; awaitingNext=false;
+  $('btnStart').disabled=true;
   $('cardTime').disabled=$('totalTime').disabled=true;
   endAt=Date.now()+min*60000;
   tickTimer=setInterval(tick,250); tick();
   deal();
 }
+
 function tick(){
   const left=endAt-Date.now();
   if(left<=0){ finish(); return; }
@@ -127,34 +163,46 @@ function tick(){
   $('timer').textContent=
     `Осталось: ${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 }
+
 function finish(){
-  active=waiting=false;
-  clearInterval(tickTimer); clearTimeout(handTimer); clearTimeout(nextTimer);
+  active=waiting=awaitingNext=false;
+  clearInterval(tickTimer); clearTimeout(handTimer);
   setButtons(false);
   $('btnStart').disabled=false;
   $('cardTime').disabled=$('totalTime').disabled=false;
+  $('btnNext').disabled = true;
   $('timer').textContent='Осталось: 00:00';
   const pct = total ? (ok/total*100).toFixed(1) : '0.0';
   alert(`Тренировка завершена!\n\nРаздач: ${total}\nПравильно: ${ok}\nНеправильно: ${bad}\nТочность: ${pct}%`);
   say('Тренировка завершена. Нажмите «Начать» для новой сессии.','#fff');
 }
+
 function say(t,c){ const r=$('result'); r.textContent=t; r.style.color=c; }
 function stats(){ $('stTotal').textContent=total; $('stOk').textContent=ok; $('stBad').textContent=bad; }
 function setButtons(on){ document.querySelectorAll('.answer').forEach(b=>b.disabled=!on); }
 
-// ---------- события ----------
 $('btnStart').onclick=start;
 $('btn1').onclick=()=>answer(1);
 $('btn2').onclick=()=>answer(2);
 $('btn0').onclick=()=>answer(0);
+$('btnNext').onclick=goNext;
+
 document.addEventListener('keydown',e=>{
-  if(e.target.tagName==='INPUT') return;
+  if(e.target.tagName==='INPUT') {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (awaitingNext) goNext();
+    }
+    return;
+  }
   const k=e.key.toLowerCase();
   if(k==='1') answer(1);
   else if(k==='2') answer(2);
   else if(k==='d'||k==='в') answer(0);
+  else if(k==='enter'){ e.preventDefault(); if (awaitingNext) goNext(); }
   else if(k===' '){ e.preventDefault(); if(!$('btnStart').disabled) start(); }
 });
+
 (function restore(){
   try{
     const s=JSON.parse(localStorage.getItem('pt_settings'));
@@ -162,4 +210,5 @@ document.addEventListener('keydown',e=>{
            $('timer').textContent=`Осталось: ${String(s.min).padStart(2,'0')}:00`; }
   }catch(_){}
   setButtons(false);
+  $('btnNext').disabled = true;
 })();
