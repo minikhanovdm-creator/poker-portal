@@ -24,24 +24,21 @@
   <span class="stat bad">Неправильно: <b id="stBad">0</b></span>
 </div>
 
-<!-- Общая ставка -->
 <div class="global-bet">
   <div class="bet-label">ОБЩАЯ СТАВКА</div>
   <div class="bet-amount" id="globalBet">0</div>
 </div>
 
-<!-- 3 колонки игроков -->
-<div class="players-grid" id="playersGrid">
-  <!-- Генерируется из JS -->
-</div>
+<div class="players-grid" id="playersGrid"></div>
 
 <div class="row" style="margin-top:14px">
   <button class="green" id="btnCheck">Проверить [Enter]</button>
   <button class="orange" id="btnSkip">Пропустить [S]</button>
+  <button class="green" id="btnNext" disabled>Продолжить [Enter] ▶</button>
 </div>
 
 <div class="panel" id="result">Нажмите «Начать», чтобы начать тренировку</div>
-<div class="hint">Горячие клавиши: Tab (между полями) · 1-5 (фокус на номинал) · Enter (проверить) · S (пропустить) · Space (старт)</div>
+<div class="hint">Горячие клавиши: Tab (между полями) · 1-5 (фокус на номинал) · Enter (проверить / продолжить) · S (пропустить) · Space (старт)</div>
 
 <script src="change.js"></script>
 </body>
