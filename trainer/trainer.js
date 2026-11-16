@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const USE_CARD_IMAGES = false;
+const USE_CARD_IMAGES = true;
 
 let board=[], hand1=[], hand2=[];
 let active=false, waiting=false, awaitingNext=false;
